@@ -1,15 +1,9 @@
-#!/usr/bin/env python
-
-import logging
-import sys
-from random import choice
-import concurrent.futures
 from argparse import ArgumentParser, FileType
 from configparser import ConfigParser
+import logging
 import time
 from confluent_kafka import Producer
 import os
-
 import cv2
 
 def serializeImg(img):
@@ -28,11 +22,16 @@ def delivery_report(err, msg):
                     f"Offset: {msg.offset()} \n" +
                     f"Timestamp: {msg.timestamp()} \n")
         
-class ProducerThread:
+class VideoProducer:
     def __init__(self, config):
+        # self.producer_config = {
+        #     'bootstrap.servers': bootstrap_servers
+        # }
+        # self.producer = Producer(self.producer_config)
         self.producer = Producer(config)
     
-    def publishFrame(self, video_path):
+    def process_video(self, video_path):
+        # READ VIDEO
         video = cv2.VideoCapture(video_path)
         video_name = os.path.basename(video_path).split(".")[0]
         frame_no = 1
@@ -40,6 +39,7 @@ class ProducerThread:
             ret, frame = video.read()
             if ret:
                 frame_bytes = serializeImg(frame)
+                # PRODUCE FRAME
                 self.producer.produce(
                     topic="action_detection", 
                     value=frame_bytes, 
@@ -49,9 +49,8 @@ class ProducerThread:
                         "video_name": str.encode(video_name)
                     }
                 )
+                time.sleep(0.025)
                 print("frame", frame_no)
-                self.producer.poll(0)
-                
                 frame_no += 1
             else:
                 break
@@ -59,15 +58,6 @@ class ProducerThread:
         self.producer.flush()
         print("done")
         return
-    
-    def start(self, vid_paths):
-        # runs until the processes in all the threads are finished
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            executor.map(self.publishFrame, vid_paths)
-
-        self.producer.flush() # push all the remaining messages in the queue
-        print("Finished...")
-
 
 if __name__ == '__main__':
     # Parse the command line.
@@ -75,14 +65,14 @@ if __name__ == '__main__':
     parser.add_argument('config_file', type=FileType('r'))
     args = parser.parse_args()
 
-    # Parse the configuration.
-    # See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+    # # Parse the configuration.
+    # # See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
     config_parser = ConfigParser()
     config_parser.read_file(args.config_file)
-    config = dict(config_parser['default'])
+    config = dict(config_parser['producer'])
    
     # Create Producer instance
-    video_path = "/Users/ctpanh/Documents/code/dnp/video/moving.mp4"
+    video_path = "./video/moving.mp4"
     
-    producer = ProducerThread(config)
-    producer.publishFrame(video_path)
+    producer = VideoProducer(config)
+    producer.process_video(video_path)

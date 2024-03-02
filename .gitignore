@@ -1,1 +1,4 @@
 /video/
+/ckpt/
+/__pycache__/
+.DS_Store
