@@ -18,7 +18,7 @@ class PoseEstimation:
     def predict(self, input_image, draw_heatmap=False):
         result = next(self.model(input_image, return_vis=True, draw_heatmap=draw_heatmap))
         img = result['visualization'][0][..., ::-1]
-        return img
+        return img, result
 
 # if __name__ == "__main__":
 #     pose_estimation = PoseEstimation(model_type='rtmpose | body')

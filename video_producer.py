@@ -49,7 +49,7 @@ class VideoProducer:
                         "video_name": str.encode(video_name)
                     }
                 )
-                time.sleep(0.025)
+                time.sleep(0.1)
                 print("frame", frame_no)
                 frame_no += 1
             else:
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     config = dict(config_parser['producer'])
    
     # Create Producer instance
-    video_path = "./video/moving.mp4"
+    video_path = "./video/tracking.mp4"
     
     producer = VideoProducer(config)
     producer.process_video(video_path)
