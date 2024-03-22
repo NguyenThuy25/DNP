@@ -2,11 +2,13 @@ from argparse import ArgumentParser, FileType
 from configparser import ConfigParser
 import json
 from pathlib import Path
-from confluent_kafka import Consumer
+from confluent_kafka import Consumer, Producer
 import cv2
 import numpy as np
 from pose import PoseEstimation
 from boxmot import OCSORT
+
+from video_producer import delivery_report
 
 class PoseEstimator:
     def __init__(self, pose_config):
@@ -16,11 +18,17 @@ class PoseEstimator:
         self.consumer.subscribe([detection_topic, frame_topic])
         self.output_data = []
         self.output_frame = []
+        self.producer = Producer(pose_config)
     
     def process_frames(self, detection_data, bbox_data):
         detection_offset = detection_data['offset']
         bbox_offset = bbox_data['offset']
-        
+        # SENDING DATA
+        out_data = {
+            'offset': bbox_offset,
+            'bbox': [],
+            'kp': [],
+        }
         # Check if offsets match
         if detection_offset == bbox_offset:
 
@@ -53,17 +61,19 @@ class PoseEstimator:
                     color,
                     thickness
                 )
+                
                 cropped_image = detection_frame[y:h, x:w]
 
                 # Perform pose estimation on the cropped image
                 pose_result, res = self.pose_model.predict(cropped_image)
                 kps = res['predictions'][0]
-                bbox_data['kps'] = kps
+                out_data['bbox'].append([x, y, w, h, id, conf, cls])
+                out_data['kp'].append(kps[0]['keypoints'])
                 # Apply the pose estimation result to the original image
                 detection_frame[y:h, x:w] = pose_result
-
+            
             print(f"Pose estimation for frame at offset {detection_offset}")
-            return detection_frame, bbox_data
+            return detection_frame, out_data
     def save_output_video(self, output_video_path):
         # Save the processed frames to a video file
         print(len(self.output_frame))
@@ -74,6 +84,7 @@ class PoseEstimator:
             self.video_writer.write(frame)
         self.video_writer.release()
         print(f"Output video saved at {output_video_path}")
+        
     def receive_bbox(self, visualize=False):
         try:
             while True:
@@ -95,18 +106,21 @@ class PoseEstimator:
                         decoded_data = json.loads(msg.value().decode('utf-8'))
                         # bbox_data = {'offset': decoded_data['offset'], 'bbox': decoded_data['bbox'][0]}
                         bbox_data = {'offset': decoded_data['offset'], 'bbox': decoded_data['bbox']}
+                        kps_data_list = []
                         for data in self.received_frame:
                             if data['offset'] == bbox_data['offset']:
-                                res_frame, output_data = self.process_frames(data, bbox_data)
+                                res_frame, kps_data = self.process_frames(data, bbox_data)
                                 self.output_frame.append(res_frame)
-                                self.output_data.append(output_data)
+                                kps_data_list.append(kps_data)
                                 if visualize:
                                     cv2.imshow('Image', res_frame)
                                     cv2.waitKey(1)
-                                
+                                # print("output_data", self.output_data)
+                                print(kps_data['offset'])
                         
                         self.received_frame = [d for d in self.received_frame if d['offset'] > bbox_data['offset']]
-                        
+                        self.producer.produce(value=json.dumps(kps_data_list, default=lambda x: x.tolist()).encode('utf-8'), topic="kp", on_delivery=delivery_report)
+
                         
         except KeyboardInterrupt:
             print("Detected Keyboard Interrupt. Quitting...")
@@ -117,9 +131,7 @@ class PoseEstimator:
             cv2.destroyAllWindows()
     def save_output_json(self, output_json_path):
         with open(output_json_path, 'w') as json_file:
-            # json.dump(self.output_data, json_file)
             json.dump(self.output_data, json_file, default=lambda x: x.tolist())
-            # json.dump(self.output_data, json_file)
                 
 
         print(f"Output JSON saved at {output_json_path}")
@@ -143,8 +155,7 @@ if __name__ == '__main__':
     # model = YOLO('ckpt/yolov8n.pt')
     pose = PoseEstimator(pose_config=config)
     # Subscribe to topic
-    pose.receive_bbox(visualize=True)
-    print(pose.output_data)
+    pose.receive_bbox(visualize=False)
     # pose.save_output_video("output/output.mp4")
     # pose.video_writer.release()
-    pose.save_output_json("output/output.json")
+    # pose.save_output_json("output/output.json")

@@ -6,7 +6,7 @@ import sys
 from argparse import ArgumentParser, FileType
 from configparser import ConfigParser
 from boxmot import DeepOCSORT
-from confluent_kafka import Consumer, OFFSET_BEGINNING, KafkaError, TopicPartition
+from confluent_kafka import Consumer, OFFSET_END, KafkaError, TopicPartition
 import cv2
 from ultralytics import YOLO
 import numpy as np
@@ -60,7 +60,8 @@ class Detector:
         cv2.waitKey(1)
 
     def process_frame(self, frame, offset, visualize):
-        results = self.detection_model.track(frame, persist=True)
+        # results = self.detection_model.track(frame, persist=True, conf)
+        results = self.detection_model(frame, conf=0.4, classes=[0])
         for result in results:
             boxes = result.boxes
             dets = []
@@ -76,7 +77,7 @@ class Detector:
             # N X (x, y, x, y, conf, cls)
                 dets.append(det)
             dets = np.array(dets)
-        print("dets", dets)
+        # print("dets", dets)
         # (x, y, x, y, id, conf, cls, ind)
         tracks = self.tracking_model.update(dets, frame)
 
@@ -88,10 +89,11 @@ class Detector:
         for track in tracks:
             # (x, y, x, y, id, conf, cls)
             bbox_id_data["bbox"].append(track[0:7].tolist())
+            # bbox_id_data["bbox"].append(track[0:4].tolist())
         if visualize:
             self.visualize(frame, tracks)
             # self.visualize(frame, dets)
-        print("bbox_id_data", bbox_id_data)
+        # print("bbox_id_data", bbox_id_data)
         return bbox_id_data
     
     def receive_and_process_frames(self, visualize=False):
@@ -103,14 +105,8 @@ class Detector:
                 elif msg.error():
                     print("ERROR: %s".format(msg.error()))
                 else:
-                    partitions = self.consumer.assignment()
-                    for partition in partitions:
-                        first, last = self.consumer.get_watermark_offsets(partition)
-                        if (last-1) != self.last_offset:
-                            print(first, last)
-                            tp = TopicPartition(self.topic, partition=0, offset=last-1)
-                            self.consumer.seek(tp)
-                            self.last_offset = last-1
+                    latest_offset_topic = TopicPartition(self.topic, partition=0, offset=OFFSET_END)
+                    self.consumer.assign([latest_offset_topic])
                     # convert image bytes data to numpy array of dtype uint8
                     nparr = np.frombuffer(msg.value(), np.uint8)
 
@@ -149,7 +145,7 @@ if __name__ == '__main__':
     producer_config = dict(config_parser['producer'])
     detector_config = dict(config_parser['detector'])
     topic = dict(config_parser['detector_topic'])['topic']
-    detection_model = YOLO('ckpt/yolov8n.pt')
+    detection_model = YOLO('ckpt/yolov8n.pt', task='detect')
     tracking_model = DeepOCSORT(
         model_weights=Path('ckpt/osnet_x0_25_msmt17.pt'), # which ReID model to use
         device='cpu',
@@ -158,4 +154,3 @@ if __name__ == '__main__':
     consumer = Detector(producer_config, detector_config, topic, detection_model, tracking_model)
     # Subscribe to topic
     consumer.receive_and_process_frames(visualize=False)
-  
