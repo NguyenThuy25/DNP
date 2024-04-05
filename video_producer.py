@@ -72,7 +72,8 @@ if __name__ == '__main__':
     config = dict(config_parser['producer'])
    
     # Create Producer instance
-    video_path = "./video/crowd.mp4"
+    # video_path = "./video/crowd.mp4"
+    video_path = "./video/iai_short.mp4"
     
     producer = VideoProducer(config)
     producer.process_video(video_path)

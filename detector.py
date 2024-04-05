@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 from argparse import ArgumentParser, FileType
 from configparser import ConfigParser
-from boxmot import DeepOCSORT
+from boxmot import OCSORT, DeepOCSORT
 from confluent_kafka import Consumer, OFFSET_END, KafkaError, TopicPartition
 import cv2
 from ultralytics import YOLO
@@ -61,7 +61,7 @@ class Detector:
 
     def process_frame(self, frame, offset, visualize):
         # results = self.detection_model.track(frame, persist=True, conf)
-        results = self.detection_model(frame, conf=0.4, classes=[0])
+        results = self.detection_model(frame, classes=0)
         for result in results:
             boxes = result.boxes
             dets = []
@@ -145,11 +145,16 @@ if __name__ == '__main__':
     producer_config = dict(config_parser['producer'])
     detector_config = dict(config_parser['detector'])
     topic = dict(config_parser['detector_topic'])['topic']
-    detection_model = YOLO('ckpt/yolov8n.pt', task='detect')
-    tracking_model = DeepOCSORT(
-        model_weights=Path('ckpt/osnet_x0_25_msmt17.pt'), # which ReID model to use
-        device='cpu',
-        fp16=False,
+    detection_model = YOLO('ckpt/yolov8n.pt')
+    # tracking_model = DeepOCSORT(
+    #     model_weights=Path('ckpt/osnet_x0_25_msmt17.pt'), # which ReID model to use
+    #     device='cpu',
+    #     fp16=False,
+    # )
+    tracking_model = OCSORT(
+        # model_weights=Path('ckpt/osnet_x0_25_msmt17.pt'), # which ReID model to use
+        # device='cpu',
+        # fp16=False,
     )
     consumer = Detector(producer_config, detector_config, topic, detection_model, tracking_model)
     # Subscribe to topic
